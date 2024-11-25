@@ -21,6 +21,10 @@
   "files": [
     "dist"
   ],
+  "repository": {
+    "type" : "git",
+    "url" : "git+https://github.com/in4in-dev/png-stenography"
+  },
   "prepare": "tsc",
   "types": "dist/index.d.ts"
 }
