@@ -37,7 +37,7 @@ await input.encodeFile('output.png', 'data.zip'); //any extension
 	
 //Decode
 let output = await Stenography.openPNG('output.png');
-let message = output.decodeFile('result.zip');
+output.decodeFile('result.zip');
 ```
 
 ## Hide encrypted file into picture
@@ -51,5 +51,5 @@ await input.encodeFileWithKey('output.png', key, 'data.zip'); //any extension
 	
 //Decode
 let output = await Stenography.openPNG('output.png');
-let message = output.decodeFileWithKey('result.zip', key); 
+output.decodeFileWithKey('result.zip', key); 
 ```
