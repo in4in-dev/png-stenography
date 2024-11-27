@@ -120,13 +120,18 @@ export default class Stenography
 		let dataBitIndex = 0;
 
 		for (let i = 4; i < outputBuffer.length; i += 4) {
-			for (let j = 0; j < 3; j++) { // R, G, B
-				if (dataBitIndex < gzipBinaryData.length * 8) {
-					let bit = (gzipBinaryData[Math.floor(dataBitIndex / 8)] >> (7 - (dataBitIndex % 8))) & 1;
-					outputBuffer[i + j] = (outputBuffer[i + j] & 0xFE) | bit;
-					dataBitIndex++;
-				}
+
+			for (let j = 0; j < 3; j++) {
+
+				let bit = (dataBitIndex < gzipBinaryData.length * 8)
+					? (gzipBinaryData[Math.floor(dataBitIndex / 8)] >> (7 - (dataBitIndex % 8))) & 1
+					: crypto.randomInt(2)
+
+				outputBuffer[i + j] = (outputBuffer[i + j] & 0xFE) | bit;
+				dataBitIndex++;
+
 			}
+
 		}
 
 		return this.saveBufferToPNG(outputPath, outputBuffer);
