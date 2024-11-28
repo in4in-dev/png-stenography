@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import {PNG} from 'pngjs';
 import { gzipSync, gunzipSync } from 'zlib';
+import * as process from "node:process";
 
 export default class Stenography
 {
@@ -17,6 +18,97 @@ export default class Stenography
 		this.png = png;
 
 	}
+
+	protected hashData(binaryData : Buffer) : Buffer
+	{
+		return crypto.createHash('sha256').update(binaryData).digest();
+	}
+
+	protected deriveAESKey(key : string) : Buffer
+	{
+		return crypto.createHash('sha256').update(key).digest();
+	}
+
+	protected unmask(pixels : Buffer) : Buffer
+	{
+
+		let bytes: number[] = [];
+		let dataBitIndex = 0;
+		let currentByte = 0;
+
+		for (let i = 0; i < pixels.length; i += 4) {
+
+			for (let j = 0; j < 3; j++) {
+
+				let bit = pixels[i + j] & 1;
+
+				currentByte = (currentByte << 1) | bit;
+				dataBitIndex++;
+
+				if (dataBitIndex % 8 === 0) {
+					bytes.push(currentByte);
+					currentByte = 0;
+				}
+
+			}
+
+		}
+
+		return Buffer.from(bytes);
+
+	}
+
+	protected mask(pixels : Buffer, data : Buffer) : Buffer
+	{
+
+		let outputBuffer = Buffer.from(pixels);
+
+		let dataBitIndex = 0;
+
+		for (let i = 0; i < outputBuffer.length; i += 4) {
+
+			for (let j = 0; j < 3; j++) {
+
+				let bit = (dataBitIndex < data.length * 8)
+					? (data[Math.floor(dataBitIndex / 8)] >> (7 - (dataBitIndex % 8))) & 1
+					: crypto.randomInt(2)
+
+				outputBuffer[i + j] = (outputBuffer[i + j] & 0xFE) | bit;
+				dataBitIndex++;
+
+			}
+
+		}
+
+		return outputBuffer;
+
+	}
+
+	protected clone(buffer : Buffer | null = null) : Stenography
+	{
+
+		let outputPicture = new PNG({
+			width: this.png.width,
+			height: this.png.height
+		});
+
+		if(!buffer){
+			buffer = this.png.data;
+		}
+
+		buffer.copy(outputPicture.data);
+
+		return new Stenography(
+			outputPicture
+		);
+
+	}
+
+	protected getAvailableEncodeBytes() : number
+	{
+		return Math.floor(this.png.data.length / 4) * 3 / 8;
+	}
+
 
 	/**
 	 * Открыть существующий файл
@@ -39,11 +131,11 @@ export default class Stenography
 	}
 
 	/**
-	 * Максимальный размер записываемых данных
+	 * Свободное место в хранилище
 	 */
-	public getAvailableEncodeBytes() : number
+	public getMemorySize() : number
 	{
-		return Math.floor(this.png.data.length / 4) * 3 / 8;
+		return this.getAvailableEncodeBytes() - 4 - 32;
 	}
 
 	/**
@@ -52,108 +144,83 @@ export default class Stenography
 	public decode(binary : boolean = false) : string | Buffer
 	{
 
-		let length = 0;
-		for (let i = 0; i < 4; i++) {
-			length |= this.png.data[i] << (i * 8);
+		let meta = this.unmask(
+			this.png.data.slice(0, 96 * 4)
+		);
+
+		let length = meta.readUInt32BE();
+		let hash = meta.slice(4, 36);
+
+		let data = this.unmask(this.png.data).slice(36, 36 + length);
+
+		if(!this.hashData(data).equals(hash)){
+			throw new Error('Cant decode this container');
 		}
 
-		if(length <= this.getAvailableEncodeBytes()){
+		let unzippedData = gunzipSync(data);
 
-			let bytes: number[] = [];
-			let dataBitIndex = 0;
-			let currentByte = 0;
-
-			for (let i = 4; i < this.png.data.length; i += 4) {
-				for (let j = 0; j < 3; j++) {
-					if (dataBitIndex < length * 8) {
-						let bit = this.png.data[i + j] & 1;
-						currentByte = (currentByte << 1) | bit;
-						dataBitIndex++;
-
-						if (dataBitIndex % 8 === 0) {
-							bytes.push(currentByte);
-							currentByte = 0;
-						}
-					}
-				}
-			}
-
-			let unzipBinaryData = gunzipSync(
-				Buffer.from(bytes)
-			)
-
-			return binary
-				? unzipBinaryData
-				: new TextDecoder().decode(
-					unzipBinaryData
-				);
-
-		}
-
-		throw new Error('Cant decode this picture');
+		return binary
+			? unzippedData
+			: new TextDecoder().decode(
+				unzippedData
+			);
 
 	}
 
 	/**
 	 * Закодировать изображение
 	 */
-	public encode(outputPath : string, data : string | Buffer) : Promise<void>
+	public encode(data : string | Buffer) : Stenography
 	{
 
 		let binaryData = typeof data === 'string'
 			? Buffer.from(data, 'utf-8')
 			: Buffer.from(data);
 
-		let gzipBinaryData = gzipSync(binaryData);
+		/**
+		 * Сжимаем для экономии места
+		 */
+		let compressedBinaryData = gzipSync(binaryData);
 
-		if (gzipBinaryData.length > this.getAvailableEncodeBytes()) {
+		/**
+		 * Записываем длину данных
+		 */
+		let length = Buffer.alloc(4);
+		length.writeUInt32BE(compressedBinaryData.length, 0);
+
+		/**
+		 * Записываем хэш данных
+		 */
+		let hash = this.hashData(compressedBinaryData);
+
+		/**
+		 * Собираем все вместе
+		 */
+		let serializedData = Buffer.concat([
+			length,
+			hash,
+			compressedBinaryData
+		]);
+
+		if (serializedData.length > this.getAvailableEncodeBytes()) {
 			throw new Error('Message is too long');
 		}
 
-		let outputBuffer = Buffer.from(this.png.data);
-
-		// Записываем длину данных
-		for (let i = 0; i < 4; i++) {
-			outputBuffer[i] = (gzipBinaryData.length >> (i * 8)) & 0xFF;
-		}
-
-		let dataBitIndex = 0;
-
-		for (let i = 4; i < outputBuffer.length; i += 4) {
-
-			for (let j = 0; j < 3; j++) {
-
-				let bit = (dataBitIndex < gzipBinaryData.length * 8)
-					? (gzipBinaryData[Math.floor(dataBitIndex / 8)] >> (7 - (dataBitIndex % 8))) & 1
-					: crypto.randomInt(2)
-
-				outputBuffer[i + j] = (outputBuffer[i + j] & 0xFE) | bit;
-				dataBitIndex++;
-
-			}
-
-		}
-
-		return this.saveBufferToPNG(outputPath, outputBuffer);
+		return this.clone(
+			this.mask(this.png.data, serializedData)
+		);
 
 	}
 
 	/**
 	 * Сохранение картинки
 	 */
-	protected async saveBufferToPNG(path : string, buffer : Buffer) : Promise<void>
+	public async saveToFile(path : string) : Promise<void>
 	{
-
-		let outputPicture = new PNG({
-			width: this.png.width,
-			height: this.png.height
-		});
-
-		buffer.copy(outputPicture.data)
 
 		let stream = fs.createWriteStream(path);
 
-		outputPicture.pack().pipe(stream);
+		this.png.pack().pipe(stream);
 
 		return new Promise(resolve => {
 			stream.on('finish', resolve);
@@ -164,10 +231,10 @@ export default class Stenography
 	/**
 	 * Закодировать изображение с AES ключом
 	 */
-	public encodeWithKey(outputPath : string, key : string, data : string | Buffer) : Promise<void>
+	public encodeWithKey(key : string, data : string | Buffer) : Stenography
 	{
 
-		let cryptoKey = crypto.createHash('sha256').update(key).digest();
+		let cryptoKey = this.deriveAESKey(key);
 
 		let binaryData = typeof data === 'string'
 			? Buffer.from(data, 'utf-8')
@@ -179,7 +246,7 @@ export default class Stenography
 
 		let finalData = Buffer.concat([iv, encryptedData]);
 
-		return this.encode(outputPath, finalData);
+		return this.encode(finalData);
 
 	}
 
@@ -207,48 +274,48 @@ export default class Stenography
 	/**
 	 * Закодировать файл внутрь изображения
 	 */
-	public encodeFile(outputPath : string, dataPath : string) : Promise<void>
+	public encodeFile(fromDataPath : string) : Stenography
 	{
 
-		let dataBuffer = fs.readFileSync(dataPath);
+		let dataBuffer = fs.readFileSync(fromDataPath);
 
-		return this.encode(outputPath, dataBuffer);
+		return this.encode(dataBuffer);
 
 	}
 
 	/**
 	 * Раскодировать файл внутри изображения
 	 */
-	public decodeFile(dataPath : string) : void
+	public decodeFile(toDataPath : string) : void
 	{
 
 		let decode = this.decode(true);
 
-		fs.writeFileSync(dataPath, decode);
+		fs.writeFileSync(toDataPath, decode);
 
 	}
 
 	/**
 	 * Закодировать файл внутрь изображения с AES ключом
 	 */
-	public encodeFileWithKey(outputPath : string, key : string, dataPath : string) : Promise<void>
+	public encodeFileWithKey(key : string, fromDataPath : string) : Stenography
 	{
 
-		let dataBuffer = fs.readFileSync(dataPath);
+		let dataBuffer = fs.readFileSync(fromDataPath);
 
-		return this.encodeWithKey(outputPath, key, dataBuffer);
+		return this.encodeWithKey(key, dataBuffer);
 
 	}
 
 	/**
 	 * Раскодировать файл внутри изображения с AES ключем
 	 */
-	public decodeFileWithKey(dataPath : string, key : string) : void
+	public decodeFileWithKey(key : string, toDataPath : string) : void
 	{
 
 		let decode = this.decodeWithKey(key, true);
 
-		fs.writeFileSync(dataPath, decode);
+		fs.writeFileSync(toDataPath, decode);
 
 	}
 

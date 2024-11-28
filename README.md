@@ -7,7 +7,7 @@
 ```javascript
 //Encode
 let input = await Stenography.openPNG('input.png');
-await input.encode('output.png', 'My Message');
+await input.encode('My Message').saveToFile('output.png');
 	
 //Decode
 let output = await Stenography.openPNG('output.png');
@@ -21,11 +21,11 @@ let key = 'My AES Key';
 
 //Encode
 let input = await Stenography.openPNG('input.png');
-await input.encodeWithKey('output.png', key, 'My Message');
+await input.encodeWithKey(key, 'My Message').saveToFile('output.png');
 	
 //Decode
 let output = await Stenography.openPNG('output.png');
-let message = output.decodeWithKey(key); //My Message
+let message = output.decodeWithKey(key); //My message
 ```
 
 ## Hide file into picture
@@ -33,7 +33,7 @@ let message = output.decodeWithKey(key); //My Message
 ```javascript
 //Encode
 let input = await Stenography.openPNG('input.png');
-await input.encodeFile('output.png', 'data.zip'); //any extension
+await input.encodeFile('data.zip').saveToFile('output.png');
 	
 //Decode
 let output = await Stenography.openPNG('output.png');
@@ -47,9 +47,9 @@ let key = 'My AES Key';
 
 //Encode
 let input = await Stenography.openPNG('input.png');
-await input.encodeFileWithKey('output.png', key, 'data.zip'); //any extension
+await input.encodeFileWithKey(key, 'data.zip').saveToFile('output.png');
 	
 //Decode
 let output = await Stenography.openPNG('output.png');
-output.decodeFileWithKey('result.zip', key); 
+output.decodeFileWithKey(key, 'result.zip'); 
 ```
