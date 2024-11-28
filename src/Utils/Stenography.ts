@@ -118,7 +118,7 @@ export default class Stenography
 
 		return new Promise(resolve => {
 
-			return  fs.createReadStream(path)
+			return fs.createReadStream(path)
 				.pipe(new PNG())
 				.on('parsed', function () {
 					resolve(

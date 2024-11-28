@@ -4,6 +4,10 @@
 
 ## Hide text message into picture
 
+```
+npm i png-stenography
+```
+
 ```javascript
 //Encode
 let input = await Stenography.openPNG('input.png');
