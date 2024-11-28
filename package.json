@@ -9,7 +9,7 @@
   },
   "name": "png-stenography",
   "description": "Hide your message or file into PNG picture",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "dist/index.js",
   "module": "dist/index.js",
   "umd:main": "dist/index.js",
