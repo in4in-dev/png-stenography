@@ -144,6 +144,10 @@ export default class Stenography
 	public decode(binary : boolean = false) : string | Buffer
 	{
 
+		if(this.png.data.length < 96 * 4){
+			throw new Error('Cant decode this container');
+		}
+
 		let meta = this.unmask(
 			this.png.data.slice(0, 96 * 4)
 		);
